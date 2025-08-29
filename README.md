@@ -125,10 +125,10 @@ python resize_screenshots.py promo/*hero* --mode stretch --each-group
 #### iPad Landscape with Smart Status Bar
 
 **Before** (Source: iPad landscape screenshot)
-<img src="examples/input/source_ipad_landscape.png" height="400" alt="iPad Source">
+![iPad Source](examples/input/source_ipad_landscape.png)
 
-**After** (Resized to iPad 11" with preserved status bar)
-<img src="examples/output/ipad/iPad (11)/source_ipad_landscape_ipad_2388x1668.png" height="400" alt="iPad Output">
+**After** (Resized to iPad 11" with preserved status bar)  
+![iPad Output](examples/output/ipad/iPad%20%2811%29/source_ipad_landscape_ipad_2388x1668.png)
 
 **What Changed:**
 - Status bar "Screens 6:16 AM Fri Aug 29" text preserved without stretching
@@ -139,10 +139,10 @@ python resize_screenshots.py promo/*hero* --mode stretch --each-group
 #### iPhone Portrait with Smart Status Bar
 
 **Before** (Source: iPhone portrait screenshot)
-<img src="examples/input/source_iphone_portrait.png" height="400" alt="iPhone Source">
+![iPhone Source](examples/input/source_iphone_portrait.png)
 
 **After** (Resized to iPhone 6.9" with preserved status bar)
-<img src="examples/output/iphone/iPhone (6.9)/source_iphone_portrait_iphone_1320x2868.png" height="400" alt="iPhone Output">
+![iPhone Output](examples/output/iphone/iPhone%20%286.9%29/source_iphone_portrait_iphone_1320x2868.png)
 
 **What Changed:**
 - Status bar "15:41" and status icons preserved at correct proportions
