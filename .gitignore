@@ -11,8 +11,11 @@ venv/
 
 # Output directories (except examples)
 resized/
-output/
+/output/
 test*/
+
+# Allow examples/output for documentation
+!examples/output/
 
 # IDE
 .vscode/
