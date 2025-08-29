@@ -128,15 +128,16 @@ python resize_screenshots.py promo/*hero* --mode stretch --each-group
 
 <img src="https://raw.githubusercontent.com/charlesvestal/smartbar-resize/main/examples/input/source_ipad_landscape.png" height="400" alt="iPad Source">
 
-**After** (Resized to iPad 12.9" with preserved status bar)
+**After** (Resized to iPad 12.9" with preserved status bar, letterboxed)
 
 <img src="https://raw.githubusercontent.com/charlesvestal/smartbar-resize/main/examples/output/ipad/iPad%20(12.9)/source_ipad_landscape_ipad_2732x2048.png" height="400" alt="iPad Output">
 
 **What Changed:**
 - Status bar "Screens 6:16 AM Fri Aug 29" text preserved without stretching
 - Status bar icons (WiFi, VPN, 82%, battery) maintain proper proportions
-- Content area resized to fit target resolution while preserving aspect ratio
-- Overall image resized from source dimensions to iPad 12.9" specifications (2732x2048)
+- Content area letterboxed (no content cut off) to fit target resolution
+- Black padding added to maintain aspect ratio without cropping
+- Overall image resized to iPad 12.9" specifications (2732x2048)
 
 #### iPhone Portrait with Smart Status Bar
 
@@ -144,13 +145,14 @@ python resize_screenshots.py promo/*hero* --mode stretch --each-group
 
 <img src="https://raw.githubusercontent.com/charlesvestal/smartbar-resize/main/examples/input/source_iphone_portrait.png" height="400" alt="iPhone Source">
 
-**After** (Resized to iPhone 6.9" with preserved status bar)
+**After** (Resized to iPhone 6.9" with preserved status bar, letterboxed)
 
 <img src="https://raw.githubusercontent.com/charlesvestal/smartbar-resize/main/examples/output/iphone/iPhone%20(6.9)/source_iphone_portrait_iphone_1320x2868.png" height="400" alt="iPhone Output">
 
 **What Changed:**
 - Status bar "15:41" and status icons preserved at correct proportions
-- Content area below status bar resized to target dimensions
+- Content area letterboxed (no content cut off) below status bar
+- Black padding added to maintain aspect ratio without cropping
 - No stretching or distortion of UI elements in status bar
 - Resized to iPhone 6.9" specifications (1320x2868)
 
