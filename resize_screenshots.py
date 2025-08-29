@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-import argparse, math, os, sys
+import argparse, math, os, sys, subprocess, tempfile
 from pathlib import Path
 from PIL import Image, ImageOps
+import json
 
 # Status bar heights for each device (in points, will be scaled appropriately)
 STATUS_BAR_HEIGHTS = {
@@ -35,7 +36,91 @@ STATUS_BAR_HEIGHTS = {
     },
 }
 
-# Allowed outputs
+# Video dimensions for App Store Connect app previews
+VIDEO_TARGETS = {
+    "iphone": {
+        "iPhone (6.9)": {
+            "portrait":  [(886, 1920)],
+            "landscape": [(1920, 886)],
+        },
+        "iPhone (6.5)": {
+            "portrait":  [(886, 1920)],
+            "landscape": [(1920, 886)],
+        },
+        "iPhone (6.3)": {
+            "portrait":  [(886, 1920)],
+            "landscape": [(1920, 886)],
+        },
+        "iPhone (6.1)": {
+            "portrait":  [(886, 1920)],
+            "landscape": [(1920, 886)],
+        },
+        "iPhone (5.5)": {
+            "portrait":  [(1080, 1920)],
+            "landscape": [(1920, 1080)],
+        },
+        "iPhone (4.7)": {
+            "portrait":  [(750, 1334)],
+            "landscape": [(1334, 750)],
+        },
+        "iPhone (4.0)": {
+            "portrait":  [(1080, 1920)],
+            "landscape": [(1920, 1080)],
+        },
+        "iPhone (3.5)": {
+            "portrait":  [(1080, 1920)],
+            "landscape": [(1920, 1080)],
+        },
+    },
+    "ipad": {
+        "iPad (13)": {
+            "portrait":  [(1200, 1600)],
+            "landscape": [(1600, 1200)],
+        },
+        "iPad (12.9)": {
+            "portrait":  [(1200, 1600), (900, 1200)],
+            "landscape": [(1600, 1200), (1200, 900)],
+        },
+        "iPad (11)": {
+            "portrait":  [(1200, 1600)],
+            "landscape": [(1600, 1200)],
+        },
+        "iPad (10.5)": {
+            "portrait":  [(1200, 1600)],
+            "landscape": [(1600, 1200)],
+        },
+        "iPad (9.7)": {
+            "portrait":  [(900, 1200)],
+            "landscape": [(1200, 900)],
+        },
+    },
+    "mac": {
+        "Mac": {
+            "portrait":  [],
+            "landscape": [],  # No app previews for Mac
+        }
+    },
+    "apple_tv": {
+        "Apple TV": {
+            "portrait":  [],
+            "landscape": [],  # No app previews for Apple TV
+        }
+    },
+    "vision_pro": {
+        "Vision Pro": {
+            "portrait":  [],
+            "landscape": [],  # No app previews for Vision Pro yet
+        }
+    },
+    "watch": {
+        "Apple Watch": {
+            "portrait":  [],
+            "landscape": [],  # No app previews for Apple Watch
+        }
+    },
+}
+
+# Screenshot dimensions for App Store Connect
 TARGETS = {
     "ipad": {
         "iPad (12.9)": {
@@ -115,13 +200,14 @@ TARGETS = {
     },
 }
 
-def iter_family_groups(family):
-    for group_label, orientations in TARGETS.get(family, {}).items():
+def iter_family_groups(family, use_video_targets=False):
+    targets = VIDEO_TARGETS if use_video_targets else TARGETS
+    for group_label, orientations in targets.get(family, {}).items():
         yield group_label, orientations
 
-def all_sizes_for_family(family):
+def all_sizes_for_family(family, use_video_targets=False):
     sizes = []
-    for _, orientations in iter_family_groups(family):
+    for _, orientations in iter_family_groups(family, use_video_targets):
         for orien, dims in orientations.items():
             for (w, h) in dims:
                 sizes.append((orien, w, h))
@@ -133,19 +219,20 @@ def orientation_of(w, h):
 def aspect_ratio(w, h):
     return w / h
 
-def nearest_family_by_aspect(w, h, device_hint="auto", allowed_families=None):
+def nearest_family_by_aspect(w, h, device_hint="auto", allowed_families=None, use_video_targets=False):
     """Choose iPad vs iPhone by aspect ratio proximity (if auto)."""
+    targets = VIDEO_TARGETS if use_video_targets else TARGETS
     if allowed_families is None:
-        allowed_families = TARGETS.keys()
-    if device_hint in TARGETS and device_hint in allowed_families:
+        allowed_families = targets.keys()
+    if device_hint in targets and device_hint in allowed_families:
         return device_hint
     ar = aspect_ratio(w, h)
     fam_scores = {}
-    for fam in TARGETS.keys():
+    for fam in targets.keys():
         if fam not in allowed_families:
             continue
         fam_ars = []
-        for _, orientations in iter_family_groups(fam):
+        for _, orientations in iter_family_groups(fam, use_video_targets):
             for orien, dims in orientations.items():
                 fam_ars.extend([sw/sh for (sw, sh) in dims])
         if not fam_ars:
@@ -153,8 +240,8 @@ def nearest_family_by_aspect(w, h, device_hint="auto", allowed_families=None):
         fam_scores[fam] = min(abs(ar - far) for far in fam_ars)
     return min(fam_scores, key=fam_scores.get)
 
-def pick_target(w, h, device_hint="auto", allowed_families=None):
-    fam = nearest_family_by_aspect(w, h, device_hint, allowed_families)
+def pick_target(w, h, device_hint="auto", allowed_families=None, use_video_targets=False):
+    fam = nearest_family_by_aspect(w, h, device_hint, allowed_families, use_video_targets)
     orien = orientation_of(w, h)
 
     ar_in = aspect_ratio(w, h)
@@ -162,7 +249,7 @@ def pick_target(w, h, device_hint="auto", allowed_families=None):
     best_score = math.inf
     best_group = None
 
-    for group_label, orientations in iter_family_groups(fam):
+    for group_label, orientations in iter_family_groups(fam, use_video_targets):
         candidates = orientations.get(orien, [])
         if not candidates:
             # fallback to any orientation in this group
@@ -180,9 +267,10 @@ def pick_target(w, h, device_hint="auto", allowed_families=None):
     tw, th = best
     return tw, th, fam, orien, best_group
 
-def candidate_targets_for(fam, group, source_orien, force_orientation="source"):
+def candidate_targets_for(fam, group, source_orien, force_orientation="source", use_video_targets=False):
     """Return a list of (tw, th) target sizes for the given family+group and orientation selection."""
-    orientations = TARGETS.get(fam, {}).get(group, {})
+    targets = VIDEO_TARGETS if use_video_targets else TARGETS
+    orientations = targets.get(fam, {}).get(group, {})
     if force_orientation == "portrait":
         orients = ["portrait"]
     elif force_orientation == "landscape":
@@ -214,8 +302,9 @@ def closest_size_from_list(in_w, in_h, sizes):
             best = (tw, th)
     return best
 
-def closest_size_for_group(in_w, in_h, fam, group_label, orient):
-    orientations = TARGETS.get(fam, {}).get(group_label, {})
+def closest_size_for_group(in_w, in_h, fam, group_label, orient, use_video_targets=False):
+    targets = VIDEO_TARGETS if use_video_targets else TARGETS
+    orientations = targets.get(fam, {}).get(group_label, {})
     sizes = orientations.get(orient, [])
     if not sizes:
         # fallback to any orientation in group
@@ -438,20 +527,148 @@ def process_image(path, out_dir, mode, device_hint, quality, format_override, al
     # Return info about the last-produced file
     return last_out, fam, orien, (TW, TH)
 
+def get_video_info(video_path):
+    """Get video dimensions and frame rate using ffprobe"""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        info = json.loads(result.stdout)
+        
+        video_stream = next((s for s in info['streams'] if s['codec_type'] == 'video'), None)
+        if not video_stream:
+            raise ValueError("No video stream found")
+            
+        width = int(video_stream['width'])
+        height = int(video_stream['height'])
+        fps = eval(video_stream.get('r_frame_rate', '30/1'))  # Convert fraction to float
+        
+        return width, height, fps
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+        raise ValueError(f"Failed to get video info: {e}")
+
+def process_video(path, out_dir, mode, device_hint, quality, format_override, allowed_families, smartbar_orientations=None, video_codec="libx264", crf=23):
+    """Process video files with same logic as images, using ffmpeg for video operations"""
+    
+    # Get video dimensions
+    try:
+        w, h, fps = get_video_info(path)
+    except ValueError as e:
+        raise ValueError(f"Cannot process video {path}: {e}")
+    
+    tw, th, fam, orien, group = pick_target(w, h, device_hint, allowed_families=allowed_families, use_video_targets=True)
+
+    # Determine which targets to produce (same logic as images but using VIDEO_TARGETS)
+    jobs = []
+    if getattr(args_namespace, "each_group", False):
+        # One output per model group, optionally per orientation
+        fam_groups = list(VIDEO_TARGETS.get(fam, {}).keys())
+        force_or = getattr(args_namespace, "force_orientation", "source")
+        for grp in fam_groups:
+            if force_or == "both":
+                orients = ["portrait", "landscape"]
+            elif force_or in ("portrait", "landscape"):
+                orients = [force_or]
+            else:  # source
+                orients = [orien]
+            for orx in orients:
+                best_pair = closest_size_for_group(w, h, fam, grp, orx, use_video_targets=True)
+                if best_pair:
+                    jobs.append((grp, best_pair[0], best_pair[1]))
+    else:
+        # Original behavior: best group only
+        if getattr(args_namespace, "all_sizes", False):
+            sizes = candidate_targets_for(
+                fam,
+                group,
+                orien,
+                getattr(args_namespace, "force_orientation", "source"),
+                use_video_targets=True
+            )
+            seen = set()
+            sizes = [(x, y) for (x, y) in sizes if not ((x, y) in seen or seen.add((x, y)))]
+            for (TW, TH) in sizes:
+                jobs.append((group, TW, TH))
+        else:
+            jobs = [(group, tw, th)]
+
+    last_out = None
+    for (group_label, TW, TH) in jobs:
+        # Determine current target orientation
+        target_orien = orientation_of(TW, TH)
+        
+        # Check if we should use smartbar for this orientation
+        use_smartbar = (smartbar_orientations and target_orien in smartbar_orientations)
+        
+        # Build output filename
+        suffix = f"_{fam}_{TW}x{TH}"
+        stem = Path(path).stem
+        ext = format_override or "mp4"
+        out_name = f"{stem}{suffix}.{ext}"
+        fam_dir = Path(out_dir) / fam / group_label
+        fam_dir.mkdir(parents=True, exist_ok=True)
+        out_path = fam_dir / out_name
+
+        # Build ffmpeg command based on mode
+        cmd = ['ffmpeg', '-y', '-i', str(path)]
+        
+        if use_smartbar:
+            # For smartbar mode, we need to extract first frame, process it, then apply to video
+            # This is complex - for now, fall back to simple resize with warning
+            print(f"Warning: Smartbar not yet implemented for videos, using simple resize for {path}")
+            use_smartbar = False
+        
+        if not use_smartbar:
+            # Simple video resize modes
+            if mode == "cover" or (mode == "cover" and not use_smartbar):
+                # Crop to fill (equivalent to cover)
+                scale_filter = f"scale={TW}:{TH}:force_original_aspect_ratio=increase,crop={TW}:{TH}"
+            elif mode == "contain":
+                # Letterbox (equivalent to contain)
+                scale_filter = f"scale={TW}:{TH}:force_original_aspect_ratio=decrease,pad={TW}:{TH}:(ow-iw)/2:(oh-ih)/2:black"
+            elif mode == "stretch":
+                # Stretch to exact dimensions
+                scale_filter = f"scale={TW}:{TH}"
+            else:
+                scale_filter = f"scale={TW}:{TH}:force_original_aspect_ratio=increase,crop={TW}:{TH}"
+                
+            cmd.extend(['-vf', scale_filter])
+        
+        # Add codec and quality options
+        cmd.extend(['-c:v', video_codec, '-crf', str(crf)])
+        cmd.extend(['-c:a', 'copy'])  # Copy audio without re-encoding
+        cmd.extend(['-movflags', '+faststart'])  # Optimize for web playback
+        cmd.append(str(out_path))
+        
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+            last_out = out_path
+        except subprocess.CalledProcessError as e:
+            raise ValueError(f"ffmpeg failed: {e}")
+
+    return last_out, fam, orien, (TW, TH)
+
 def iter_paths(input_path):
     p = Path(input_path)
-    exts = {".png", ".jpg", ".jpeg", ".heic", ".heif", ".webp", ".tif", ".tiff", ".bmp"}
+    image_exts = {".png", ".jpg", ".jpeg", ".heic", ".heif", ".webp", ".tif", ".tiff", ".bmp"}
+    video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+    all_exts = image_exts | video_exts
     if p.is_file():
-        if p.suffix.lower() in exts:
+        if p.suffix.lower() in all_exts:
             yield p
         return
     for fp in p.rglob("*"):
-        if fp.is_file() and fp.suffix.lower() in exts:
+        if fp.is_file() and fp.suffix.lower() in all_exts:
             yield fp
+
+def is_video_file(path):
+    video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+    return Path(path).suffix.lower() in video_exts
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Resize device screenshots to the closest or all allowed sizes by family and model group (cover/contain/stretch/cover_smartbar). Supports per-group output via --each-group."
+        description="Resize device screenshots and videos to the closest or all allowed sizes by family and model group (cover/contain/stretch/cover_smartbar). Supports per-group output via --each-group."
     )
     ap.add_argument("input", nargs="+", help="Input file(s) or directory(ies)")
     ap.add_argument("-o", "--output", default="resized", help="Output directory (default: ./resized)")
@@ -461,6 +678,8 @@ def main():
                     help="cover: fill target (crop if needed); contain: letterbox; stretch: distort to fit; cover_smartbar: cover but preserve status bar by 2-slice (default: cover)")
     ap.add_argument("--quality", type=int, default=92, help="JPEG quality (default: 92)")
     ap.add_argument("--format", choices=["jpg", "png"], help="Force output format (optional)")
+    ap.add_argument("--video-codec", default="libx264", help="Video codec for output (default: libx264)")
+    ap.add_argument("--video-crf", type=int, default=23, help="Video CRF quality 0-51, lower is better (default: 23)")
     ap.add_argument("--families", default="iphone,ipad",
                     help=f"Comma-separated list of families to consider (choices: {','.join(TARGETS.keys())}; default: iphone,ipad)")
     ap.add_argument("--all-sizes", action="store_true",
@@ -507,16 +726,28 @@ def main():
     for input_path in args.input:
         for p in iter_paths(input_path):
             try:
-                out_path, fam, orien, size = process_image(
-                    p, out_dir, args.mode, args.device, args.quality, args.format, allowed_families=selected_families, smartbar_orientations=smartbar_orientations
-                )
+                if is_video_file(p):
+                    out_path, fam, orien, size = process_video(
+                        p, out_dir, args.mode, args.device, args.quality, args.format, 
+                        allowed_families=selected_families, smartbar_orientations=smartbar_orientations,
+                        video_codec=args.video_codec,
+                        crf=args.video_crf
+                    )
+                    file_type = "video"
+                else:
+                    out_path, fam, orien, size = process_image(
+                        p, out_dir, args.mode, args.device, args.quality, args.format, 
+                        allowed_families=selected_families, smartbar_orientations=smartbar_orientations
+                    )
+                    file_type = "image"
+                    
                 processed += 1
-                print(f"✓ {p.name} → {out_path.name} ({fam}, {orien}, {size[0]}x{size[1]})")
+                print(f"✓ {p.name} → {out_path.name} ({fam}, {orien}, {size[0]}x{size[1]}) [{file_type}]")
             except Exception as e:
                 print(f"✗ {p}: {e}", file=sys.stderr)
 
     if processed == 0:
-        print("No matching images found.", file=sys.stderr)
+        print("No matching images or videos found.", file=sys.stderr)
 
 if __name__ == "__main__":
     main()

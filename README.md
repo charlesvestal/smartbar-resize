@@ -1,22 +1,29 @@
 # Smartbar Resize
 
-A Python utility for intelligently resizing device screenshots to App Store Connect specifications while preserving status bars with proper proportions.
+A Python utility for intelligently resizing device screenshots and videos to App Store Connect specifications while preserving status bars with proper proportions.
 
 ## Features
 
 - **Smart Status Bar Preservation**: Maintains authentic status bar appearance using 2-slice horizontal resizing
-- **Orientation-Specific Control**: Apply status bar handling only to portrait, landscape, or both orientations
+- **Video + Image Support**: Process both screenshots and app preview videos with correct App Store Connect dimensions
+- **Orientation-Specific Control**: Apply status bar handling only to portrait, landscape, or both orientations  
 - **Multiple Content Modes**: Choose between cover (crop to fill) or contain (letterbox) for content below status bar
-- **Multi-Device Support**: Generate screenshots for all iOS device sizes automatically
+- **Multi-Device Support**: Generate outputs for all iOS device sizes automatically
 - **Flexible Input**: Process individual files, directories, or use glob patterns
 - **Device Family Detection**: Automatically detect iPad vs iPhone based on aspect ratio
+- **Video Quality Control**: Configurable codec and quality settings for video output
 
 ## Installation
 
-Requires Python 3.6+ and PIL/Pillow:
+Requires Python 3.6+, PIL/Pillow, and FFmpeg:
 
 ```bash
 pip install Pillow
+
+# Install FFmpeg (for video processing)
+# macOS: brew install ffmpeg
+# Ubuntu/Debian: apt install ffmpeg
+# Windows: Download from https://ffmpeg.org/
 ```
 
 ## Quick Start
@@ -27,11 +34,17 @@ pip install Pillow
 # Resize all images in a directory for iPad
 python resize_screenshots.py screenshots/ --device ipad --families ipad --each-group
 
-# iPhone with status bar only on portrait orientation
+# iPhone with status bar only on portrait orientation  
 python resize_screenshots.py screenshots/ --device iphone --families iphone --each-group --smartbar portrait
 
 # iPad with status bar on both orientations, letterboxed content
 python resize_screenshots.py screenshots/ --device ipad --families ipad --each-group --smartbar both --smartbar-mode contain
+
+# Process videos for iPhone app previews (uses App Store Connect video dimensions)
+python resize_screenshots.py videos/*.mp4 --device iphone --families iphone --each-group --mode contain
+
+# Mixed images and videos with custom video quality
+python resize_screenshots.py content/ --families iphone,ipad --each-group --video-codec libx265 --video-crf 28
 ```
 
 ### Target Specific Files
@@ -99,6 +112,54 @@ python resize_screenshots.py marketing/ \
 # Stretch specific promotional images
 python resize_screenshots.py promo/*hero* --mode stretch --each-group
 ```
+
+## Visual Examples
+
+### Before and After Comparison
+
+#### iPad Landscape with Smart Status Bar
+
+**Before** (Source: iPad landscape screenshot)
+![iPad Source](examples/input/source_ipad_landscape.png)
+
+**After** (Resized to iPad 11" with preserved status bar)
+![iPad Output](examples/output/ipad/iPad%20(11)/source_ipad_landscape_ipad_2388x1668.png)
+
+**What Changed:**
+- Status bar "Screens 6:16 AM Fri Aug 29" text preserved without stretching
+- Status bar icons (WiFi, VPN, 82%, battery) maintain proper proportions
+- Content area resized to fit target resolution while preserving aspect ratio
+- Overall image resized from source dimensions to iPad 11" specifications (2388x1668)
+
+#### iPhone Portrait with Smart Status Bar
+
+**Before** (Source: iPhone portrait screenshot)
+![iPhone Source](examples/input/source_iphone_portrait.png)
+
+**After** (Resized to iPhone 6.9" with preserved status bar)
+![iPhone Output](examples/output/iphone/iPhone%20(6.9)/source_iphone_portrait_iphone_1320x2868.png)
+
+**What Changed:**
+- Status bar "15:41" and status icons preserved at correct proportions
+- Content area below status bar resized to target dimensions
+- No stretching or distortion of UI elements in status bar
+- Resized to iPhone 6.9" specifications (1320x2868)
+
+## Video vs Screenshot Dimensions
+
+The utility automatically uses different target dimensions for videos vs screenshots:
+
+### App Preview Videos (when processing .mp4, .mov, etc.)
+- **iPhone 6.9"**: 886×1920 (portrait), 1920×886 (landscape) 
+- **iPhone 6.5"/6.3"/6.1"**: 886×1920 (portrait), 1920×886 (landscape)
+- **iPhone 5.5"/4.0"**: 1080×1920 (portrait), 1920×1080 (landscape)
+- **iPhone 4.7"**: 750×1334 (portrait), 1334×750 (landscape)
+- **iPad 13"/12.9"/11"/10.5"**: 1200×1600 (portrait), 1600×1200 (landscape)
+- **iPad 9.7"**: 900×1200 (portrait), 1200×900 (landscape)
+
+### Screenshots (when processing .png, .jpg, etc.)
+- Uses full App Store Connect screenshot specifications
+- Much higher resolution than videos (e.g. iPhone 6.9" screenshots are 1290×2796)
 
 ## How Smart Status Bar Works
 
