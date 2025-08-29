@@ -86,6 +86,11 @@ python resize_screenshots.py screenshots/*menu* screenshots/*settings* --device 
 - `--quality QUALITY` - JPEG quality (default: 92)
 - `--format {jpg,png}` - Force output format
 
+### Video Options
+- `--video-codec CODEC` - Video codec for output (default: libx264)
+- `--video-crf CRF` - Video CRF quality 0-51, lower is better (default: 18 for App Store Connect)
+- `--app-store-optimize` - Use App Store Connect optimized settings (H.264 High Profile, 30fps max)
+
 ## Examples
 
 ### App Store Screenshots
@@ -120,10 +125,10 @@ python resize_screenshots.py promo/*hero* --mode stretch --each-group
 #### iPad Landscape with Smart Status Bar
 
 **Before** (Source: iPad landscape screenshot)
-![iPad Source](examples/input/source_ipad_landscape.png)
+<img src="examples/input/source_ipad_landscape.png" height="400" alt="iPad Source">
 
 **After** (Resized to iPad 11" with preserved status bar)
-![iPad Output](examples/output/ipad/iPad%20(11)/source_ipad_landscape_ipad_2388x1668.png)
+<img src="examples/output/ipad/iPad (11)/source_ipad_landscape_ipad_2388x1668.png" height="400" alt="iPad Output">
 
 **What Changed:**
 - Status bar "Screens 6:16 AM Fri Aug 29" text preserved without stretching
@@ -134,10 +139,10 @@ python resize_screenshots.py promo/*hero* --mode stretch --each-group
 #### iPhone Portrait with Smart Status Bar
 
 **Before** (Source: iPhone portrait screenshot)
-![iPhone Source](examples/input/source_iphone_portrait.png)
+<img src="examples/input/source_iphone_portrait.png" height="400" alt="iPhone Source">
 
 **After** (Resized to iPhone 6.9" with preserved status bar)
-![iPhone Output](examples/output/iphone/iPhone%20(6.9)/source_iphone_portrait_iphone_1320x2868.png)
+<img src="examples/output/iphone/iPhone (6.9)/source_iphone_portrait_iphone_1320x2868.png" height="400" alt="iPhone Output">
 
 **What Changed:**
 - Status bar "15:41" and status icons preserved at correct proportions
@@ -160,6 +165,25 @@ The utility automatically uses different target dimensions for videos vs screens
 ### Screenshots (when processing .png, .jpg, etc.)
 - Uses full App Store Connect screenshot specifications
 - Much higher resolution than videos (e.g. iPhone 6.9" screenshots are 1290×2796)
+
+## App Store Connect Compliance
+
+The utility automatically validates and enforces App Store Connect requirements for videos:
+
+### Automatic Validation
+- **Framerate**: Automatically limits to 30fps maximum (reduces higher framerates)
+- **Duration**: Warns if video is shorter than 15s or longer than 30s
+- **File Size**: Warns if source video exceeds 500MB limit
+- **Dimensions**: Uses exact App Store Connect app preview dimensions
+
+### Optimization Options
+```bash
+# Use App Store Connect optimized settings
+python resize_screenshots.py videos/ --app-store-optimize --families iphone --each-group
+
+# Custom high-quality settings  
+python resize_screenshots.py videos/ --video-codec libx264 --video-crf 15 --families ipad
+```
 
 ## How Smart Status Bar Works
 

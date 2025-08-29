@@ -528,10 +528,11 @@ def process_image(path, out_dir, mode, device_hint, quality, format_override, al
     return last_out, fam, orien, (TW, TH)
 
 def get_video_info(video_path):
-    """Get video dimensions and frame rate using ffprobe"""
+    """Get video dimensions, frame rate, and duration using ffprobe"""
     try:
         cmd = [
-            'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(video_path)
+            'ffprobe', '-v', 'quiet', '-print_format', 'json', 
+            '-show_streams', '-show_format', str(video_path)
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(result.stdout)
@@ -544,18 +545,37 @@ def get_video_info(video_path):
         height = int(video_stream['height'])
         fps = eval(video_stream.get('r_frame_rate', '30/1'))  # Convert fraction to float
         
-        return width, height, fps
+        # Get duration from format info
+        duration = float(info.get('format', {}).get('duration', 0))
+        
+        return width, height, fps, duration
     except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
         raise ValueError(f"Failed to get video info: {e}")
 
-def process_video(path, out_dir, mode, device_hint, quality, format_override, allowed_families, smartbar_orientations=None, video_codec="libx264", crf=23):
+def process_video(path, out_dir, mode, device_hint, quality, format_override, allowed_families, smartbar_orientations=None, video_codec="libx264", crf=18, app_store_optimize=False):
     """Process video files with same logic as images, using ffmpeg for video operations"""
     
-    # Get video dimensions
+    # Get video dimensions and info
     try:
-        w, h, fps = get_video_info(path)
+        w, h, fps, duration = get_video_info(path)
     except ValueError as e:
         raise ValueError(f"Cannot process video {path}: {e}")
+    
+    # Validate App Store Connect requirements
+    file_size_mb = path.stat().st_size / (1024 * 1024)  # Size in MB
+    
+    if duration < 15:
+        print(f"Warning: Video {path} is {duration:.1f}s (minimum 15s for App Store Connect)")
+    elif duration > 30:
+        print(f"Warning: Video {path} is {duration:.1f}s (maximum 30s for App Store Connect)")
+        
+    if file_size_mb > 500:
+        print(f"Warning: Video {path} is {file_size_mb:.1f}MB (maximum 500MB for App Store Connect)")
+    
+    # Determine target framerate (max 30fps for App Store Connect)
+    target_fps = min(fps, 30.0)
+    if fps > 30:
+        print(f"Info: Reducing framerate from {fps:.1f}fps to 30fps for App Store Connect compliance")
     
     tw, th, fam, orien, group = pick_target(w, h, device_hint, allowed_families=allowed_families, use_video_targets=True)
 
@@ -619,24 +639,43 @@ def process_video(path, out_dir, mode, device_hint, quality, format_override, al
             print(f"Warning: Smartbar not yet implemented for videos, using simple resize for {path}")
             use_smartbar = False
         
+        # Build video filters
+        filters = []
+        
+        # Add framerate filter if needed (before scaling)
+        if fps > 30:
+            filters.append(f"fps={target_fps}")
+        
         if not use_smartbar:
             # Simple video resize modes
             if mode == "cover" or (mode == "cover" and not use_smartbar):
                 # Crop to fill (equivalent to cover)
-                scale_filter = f"scale={TW}:{TH}:force_original_aspect_ratio=increase,crop={TW}:{TH}"
+                filters.append(f"scale={TW}:{TH}:force_original_aspect_ratio=increase,crop={TW}:{TH}")
             elif mode == "contain":
                 # Letterbox (equivalent to contain)
-                scale_filter = f"scale={TW}:{TH}:force_original_aspect_ratio=decrease,pad={TW}:{TH}:(ow-iw)/2:(oh-ih)/2:black"
+                filters.append(f"scale={TW}:{TH}:force_original_aspect_ratio=decrease,pad={TW}:{TH}:(ow-iw)/2:(oh-ih)/2:black")
             elif mode == "stretch":
                 # Stretch to exact dimensions
-                scale_filter = f"scale={TW}:{TH}"
+                filters.append(f"scale={TW}:{TH}")
             else:
-                scale_filter = f"scale={TW}:{TH}:force_original_aspect_ratio=increase,crop={TW}:{TH}"
-                
-            cmd.extend(['-vf', scale_filter])
+                filters.append(f"scale={TW}:{TH}:force_original_aspect_ratio=increase,crop={TW}:{TH}")
+        
+        # Apply filters if any
+        if filters:
+            cmd.extend(['-vf', ','.join(filters)])
         
         # Add codec and quality options
-        cmd.extend(['-c:v', video_codec, '-crf', str(crf)])
+        if app_store_optimize:
+            # App Store Connect optimized settings
+            cmd.extend(['-c:v', 'libx264'])
+            cmd.extend(['-profile:v', 'high'])  # H.264 High Profile
+            cmd.extend(['-level', '4.0'])      # H.264 Level 4.0
+            cmd.extend(['-crf', str(max(crf, 15))])  # Higher quality for App Store
+            cmd.extend(['-preset', 'slow'])     # Better compression
+            cmd.extend(['-pix_fmt', 'yuv420p']) # Compatibility
+        else:
+            cmd.extend(['-c:v', video_codec, '-crf', str(crf)])
+            
         cmd.extend(['-c:a', 'copy'])  # Copy audio without re-encoding
         cmd.extend(['-movflags', '+faststart'])  # Optimize for web playback
         cmd.append(str(out_path))
@@ -679,7 +718,8 @@ def main():
     ap.add_argument("--quality", type=int, default=92, help="JPEG quality (default: 92)")
     ap.add_argument("--format", choices=["jpg", "png"], help="Force output format (optional)")
     ap.add_argument("--video-codec", default="libx264", help="Video codec for output (default: libx264)")
-    ap.add_argument("--video-crf", type=int, default=23, help="Video CRF quality 0-51, lower is better (default: 23)")
+    ap.add_argument("--video-crf", type=int, default=18, help="Video CRF quality 0-51, lower is better (default: 18 for App Store Connect)")
+    ap.add_argument("--app-store-optimize", action="store_true", help="Use App Store Connect optimized settings (H.264 High Profile, 30fps max, higher quality)")
     ap.add_argument("--families", default="iphone,ipad",
                     help=f"Comma-separated list of families to consider (choices: {','.join(TARGETS.keys())}; default: iphone,ipad)")
     ap.add_argument("--all-sizes", action="store_true",
@@ -731,7 +771,8 @@ def main():
                         p, out_dir, args.mode, args.device, args.quality, args.format, 
                         allowed_families=selected_families, smartbar_orientations=smartbar_orientations,
                         video_codec=args.video_codec,
-                        crf=args.video_crf
+                        crf=args.video_crf,
+                        app_store_optimize=args.app_store_optimize
                     )
                     file_type = "video"
                 else:
